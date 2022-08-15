@@ -93,15 +93,17 @@
         <div
           v-for="tTicker in trackedTickers"
           :key="tTicker.name"
-          class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
+          @click="changeSelectedTicker(tTicker.name)"
+          :class="{ 'border-purple-800': tTicker.name === selectedTicker }"
+          class="bg-white overflow-hidden shadow rounded-lg border-4 border-transparent border-solid cursor-pointer"
         >
           <div class="px-4 py-5 sm:p-6 text-center">
-            <dt class="text-sm font-medium text-gray-500 truncate">{{ tTicker.price }} - USD</dt>
-            <dd class="mt-1 text-3xl font-semibold text-gray-900">{{ tTicker.name }}</dd>
+            <dt class="text-sm font-medium text-gray-500 truncate">{{ tTicker.name }} - USD</dt>
+            <dd class="mt-1 text-3xl font-semibold text-gray-900">{{ tTicker.price }}</dd>
           </div>
           <div class="w-full border-t border-gray-200"></div>
           <button
-            @click="removeTrackedTicker(tTicker.name)"
+            @click.stop="removeTrackedTicker(tTicker.name)"
             class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
           >
             <svg
@@ -123,15 +125,17 @@
       </dl>
       <div v-else class="text-center font-bold mt-5 text-xl">Нет отслеживаемых тикеров</div>
       <hr class="w-full border-t border-gray-600 my-4" />
-      <section class="relative">
-        <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">VUE - USD</h3>
+      <section v-if="selectedTicker" class="relative">
+        <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">{{ selectedTicker }} - USD</h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
-          <div class="bg-purple-800 border w-10 h-24"></div>
-          <div class="bg-purple-800 border w-10 h-32"></div>
-          <div class="bg-purple-800 border w-10 h-48"></div>
-          <div class="bg-purple-800 border w-10 h-16"></div>
+          <div
+            v-for="(price, index) in normalizePricesChart()"
+            :key="index"
+            :style="{ height: `${price}%` }"
+            class="bg-purple-800 border w-10 h-24"
+          ></div>
         </div>
-        <button type="button" class="absolute top-0 right-0">
+        <button @click="changeSelectedTicker('')" type="button" class="absolute top-0 right-0">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -160,23 +164,56 @@
 </template>
 
 <script lang="ts">
+import axios from 'axios';
 import { defineComponent } from 'vue';
+import { API_KEY, INTERVAL_PRICE_UPDATE } from '@/config';
+
 export default defineComponent({
   data() {
     return {
       isAppLoading: true,
       inputTicker: '',
-      trackedTickers: [] as Array<{ name: string; price: number }>,
+      selectedTicker: '',
+      trackedTickers: [] as Array<{ name: string; price: string }>,
+      pricesChart: [] as Array<number>,
     };
   },
   methods: {
     addTrackedTicker(): void {
-      const selectedTicker = { name: this.inputTicker, price: 0 };
-      this.trackedTickers.push(selectedTicker);
+      const currentTicker = { name: this.inputTicker, price: '-' };
+      this.trackedTickers.push(currentTicker);
       this.inputTicker = '';
+
+      setInterval(async () => {
+        const response = await axios.get(
+          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=${API_KEY}`
+        );
+        const findTicker = this.trackedTickers.find((ticker) => currentTicker.name === ticker.name);
+        if (findTicker) {
+          const responsePrice = response.data.USD;
+          const normalizePrice =
+            responsePrice > 1 ? responsePrice.toFixed(2) : responsePrice.toPrecision(2);
+          findTicker.price = normalizePrice;
+
+          if (this.selectedTicker && this.selectedTicker === findTicker.name) {
+            this.pricesChart.push(+normalizePrice);
+          }
+        }
+      }, INTERVAL_PRICE_UPDATE);
     },
     removeTrackedTicker(tickerName: string): void {
       this.trackedTickers = this.trackedTickers.filter((ticker) => ticker.name != tickerName);
+    },
+    changeSelectedTicker(tickerName: string): void {
+      this.selectedTicker = tickerName;
+      this.pricesChart = [];
+    },
+    normalizePricesChart() {
+      const maxValue = Math.max(...this.pricesChart);
+      const minValue = Math.min(...this.pricesChart);
+      return this.pricesChart.map((price) => {
+        return 5 + ((price - minValue) * 95) / (maxValue - minValue);
+      });
     },
   },
   mounted() {
