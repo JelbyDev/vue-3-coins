@@ -44,11 +44,11 @@
               />
             </div>
             <div
-              v-if="autocompleteTickers.length"
+              v-if="autocompletedTickers.length"
               class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
             >
               <span
-                v-for="aTicker in autocompleteTickers"
+                v-for="aTicker in autocompletedTickers"
                 :key="aTicker"
                 @click="clickedOnAutocompleteTicker(aTicker)"
                 class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
@@ -133,14 +133,14 @@
         <button
           v-if="currentPage > 1 && totalPages > 1"
           @click="decrementCurrentPage"
-          class="inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          class="mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
         >
           Предыдущая страница
         </button>
         <button
           v-if="currentPage < totalPages"
           @click="incrementCurrentPage"
-          class="inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          class="max-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
         >
           Следующая страница
         </button>
@@ -220,8 +220,15 @@ export default defineComponent({
     };
   },
   mounted() {
+    const windowSearchParams = Object.fromEntries(
+      new URL(window.location.href).searchParams.entries()
+    );
+    if (windowSearchParams.search) this.searchQuery = windowSearchParams.search;
+    if (windowSearchParams.page) this.currentPage = +windowSearchParams.page;
+
     this.setAllTickers();
-    const localTrackedTickers = localStorage.getItem('trackedTickers');
+
+    const localTrackedTickers = window.localStorage.getItem('trackedTickers');
     if (localTrackedTickers) {
       this.trackedTickers = JSON.parse(localTrackedTickers);
       this.trackedTickers.forEach((ticker) => {
@@ -306,16 +313,28 @@ export default defineComponent({
   watch: {
     searchQuery() {
       this.currentPage = 1;
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?search=${this.searchQuery}&page=${this.currentPage}`
+      );
+    },
+    currentPage() {
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?search=${this.searchQuery}&page=${this.currentPage}`
+      );
     },
     trackedTickers() {
-      localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
+      window.localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
     },
     searchedTickers() {
       this.totalPages = Math.ceil(this.searchedTickers.length / LIMIT_TRACKED_TICKERS_ON_PAGE);
     },
   },
   computed: {
-    autocompleteTickers(): Array<string> {
+    autocompletedTickers(): Array<string> {
       if (!this.inputTicker) return [];
       return this.allTickers
         .filter(
@@ -327,7 +346,9 @@ export default defineComponent({
         .slice(0, 4);
     },
     searchedTickers(): Array<TrackedTickerInfo> {
-      return this.trackedTickers.filter((ticker) => ticker.name.includes(this.searchQuery));
+      return this.trackedTickers.filter((ticker) =>
+        ticker.name.toLocaleLowerCase().includes(this.searchQuery.toLocaleLowerCase())
+      );
     },
     paginatedTickers(): Array<TrackedTickerInfo> {
       return this.searchedTickers.slice(this.startPaginatedIndex, this.endPaginatedIndex);
