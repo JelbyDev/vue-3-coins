@@ -35,35 +35,30 @@
                 type="text"
                 v-model="inputTicker"
                 @keydown.enter="addTrackedTicker"
+                @input="errorDoubleTicker = false"
+                autocomplete="false"
                 name="wallet"
                 id="wallet"
                 class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
                 placeholder="Например DOGE"
               />
             </div>
-            <div class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
+            <div
+              v-if="autocompleteTickers.length"
+              class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
+            >
               <span
+                v-for="aTicker in autocompleteTickers"
+                :key="aTicker"
+                @click="clickedOnAutocompleteTicker(aTicker)"
                 class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
               >
-                BTC
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                DOGE
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                BCH
-              </span>
-              <span
-                class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer"
-              >
-                CHD
+                {{ aTicker }}
               </span>
             </div>
-            <div class="text-sm text-red-600">Такой тикер уже добавлен</div>
+            <div v-if="errorDoubleTicker" class="text-sm text-red-600">
+              Такой тикер уже добавлен
+            </div>
           </div>
         </div>
         <button
@@ -172,14 +167,26 @@ export default defineComponent({
   data() {
     return {
       isAppLoading: true,
+      errorDoubleTicker: false,
       inputTicker: '',
       selectedTicker: '',
+      autocompleteTickers: [] as Array<string>,
+      allTickers: [] as Array<{ Id: number; ImageUrl: string; Symbol: string; FullName: string }>,
       trackedTickers: [] as Array<{ name: string; price: string }>,
       pricesChart: [] as Array<number>,
     };
   },
   methods: {
-    addTrackedTicker(): void {
+    addTrackedTicker(): void | boolean {
+      if (
+        this.trackedTickers.find(
+          (element) => element.name.toLocaleLowerCase() === this.inputTicker.toLocaleLowerCase()
+        )
+      ) {
+        this.errorDoubleTicker = true;
+        return false;
+      }
+
       const currentTicker = { name: this.inputTicker, price: '-' };
       this.trackedTickers.push(currentTicker);
       this.inputTicker = '';
@@ -204,6 +211,10 @@ export default defineComponent({
     removeTrackedTicker(tickerName: string): void {
       this.trackedTickers = this.trackedTickers.filter((ticker) => ticker.name != tickerName);
     },
+    clickedOnAutocompleteTicker(tickerName: string): void {
+      this.inputTicker = tickerName;
+      this.addTrackedTicker();
+    },
     changeSelectedTicker(tickerName: string): void {
       this.selectedTicker = tickerName;
       this.pricesChart = [];
@@ -215,9 +226,36 @@ export default defineComponent({
         return 5 + ((price - minValue) * 95) / (maxValue - minValue);
       });
     },
+    async setAllTickers() {
+      this.isAppLoading = true;
+      try {
+        const response = await axios.get(
+          'https://min-api.cryptocompare.com/data/all/coinlist?summary=true'
+        );
+        this.allTickers = Object.values(response.data.Data);
+      } catch (error) {
+        console.log(error);
+      } finally {
+        this.isAppLoading = false;
+      }
+    },
   },
   mounted() {
-    this.isAppLoading = false;
+    this.setAllTickers();
+  },
+  watch: {
+    inputTicker() {
+      if (this.allTickers.length && this.inputTicker) {
+        this.autocompleteTickers = this.allTickers
+          .filter(
+            (element) =>
+              element.Symbol.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase()) ||
+              element.FullName.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase())
+          )
+          .map((element) => element.Symbol)
+          .slice(0, 4);
+      }
+    },
   },
 });
 </script>
