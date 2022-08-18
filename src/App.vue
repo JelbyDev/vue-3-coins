@@ -176,6 +176,16 @@ export default defineComponent({
       pricesChart: [] as Array<number>,
     };
   },
+  mounted() {
+    this.setAllTickers();
+    const localTrackedTickers = localStorage.getItem('trackedTickers');
+    if (localTrackedTickers) {
+      this.trackedTickers = JSON.parse(localTrackedTickers);
+      this.trackedTickers.forEach((ticker) => {
+        this.subscribeToUpdatedTickerPrice(ticker.name);
+      });
+    }
+  },
   methods: {
     addTrackedTicker(): void | boolean {
       if (
@@ -189,24 +199,11 @@ export default defineComponent({
 
       const currentTicker = { name: this.inputTicker, price: '-' };
       this.trackedTickers.push(currentTicker);
+      localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
+
       this.inputTicker = '';
 
-      setInterval(async () => {
-        const response = await axios.get(
-          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=${API_KEY}`
-        );
-        const findTicker = this.trackedTickers.find((ticker) => currentTicker.name === ticker.name);
-        if (findTicker) {
-          const responsePrice = response.data.USD;
-          const normalizePrice =
-            responsePrice > 1 ? responsePrice.toFixed(2) : responsePrice.toPrecision(2);
-          findTicker.price = normalizePrice;
-
-          if (this.selectedTicker && this.selectedTicker === findTicker.name) {
-            this.pricesChart.push(+normalizePrice);
-          }
-        }
-      }, INTERVAL_PRICE_UPDATE);
+      this.subscribeToUpdatedTickerPrice(currentTicker.name);
     },
     removeTrackedTicker(tickerName: string): void {
       this.trackedTickers = this.trackedTickers.filter((ticker) => ticker.name != tickerName);
@@ -239,20 +236,35 @@ export default defineComponent({
         this.isAppLoading = false;
       }
     },
-  },
-  mounted() {
-    this.setAllTickers();
+    subscribeToUpdatedTickerPrice(tickerName: string): void {
+      setInterval(async () => {
+        const response = await axios.get(
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=${API_KEY}`
+        );
+        const findTicker = this.trackedTickers.find((ticker) => tickerName === ticker.name);
+        if (findTicker) {
+          const responsePrice = response.data.USD;
+          const normalizePrice =
+            responsePrice > 1 ? responsePrice.toFixed(2) : responsePrice.toPrecision(2);
+          findTicker.price = normalizePrice;
+
+          if (this.selectedTicker && this.selectedTicker === findTicker.name) {
+            this.pricesChart.push(+normalizePrice);
+          }
+        }
+      }, INTERVAL_PRICE_UPDATE);
+    },
   },
   watch: {
     inputTicker() {
       if (this.allTickers.length && this.inputTicker) {
         this.autocompleteTickers = this.allTickers
           .filter(
-            (element) =>
-              element.Symbol.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase()) ||
-              element.FullName.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase())
+            (ticker) =>
+              ticker.Symbol.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase()) ||
+              ticker.FullName.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase())
           )
-          .map((element) => element.Symbol)
+          .map((ticker) => ticker.Symbol)
           .slice(0, 4);
       }
     },
