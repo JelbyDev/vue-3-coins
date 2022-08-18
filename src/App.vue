@@ -84,21 +84,29 @@
       </section>
 
       <hr class="w-full border-t border-gray-600 my-4" />
-      <dl v-if="trackedTickers.length" class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <input
+        type="text"
+        v-model="searchQuery"
+        placeholder="Поиск..."
+        class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
+      />
+      <hr class="w-full border-t border-gray-600 my-4" />
+
+      <dl v-if="paginatedTickers.length" class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
         <div
-          v-for="tTicker in trackedTickers"
-          :key="tTicker.name"
-          @click="changeSelectedTicker(tTicker.name)"
-          :class="{ 'border-purple-800': tTicker.name === selectedTicker }"
+          v-for="ticker in paginatedTickers"
+          :key="ticker.name"
+          @click="changeSelectedTicker(ticker.name)"
+          :class="{ 'border-purple-800': ticker.name === selectedTicker }"
           class="bg-white overflow-hidden shadow rounded-lg border-4 border-transparent border-solid cursor-pointer"
         >
           <div class="px-4 py-5 sm:p-6 text-center">
-            <dt class="text-sm font-medium text-gray-500 truncate">{{ tTicker.name }} - USD</dt>
-            <dd class="mt-1 text-3xl font-semibold text-gray-900">{{ tTicker.price }}</dd>
+            <dt class="text-sm font-medium text-gray-500 truncate">{{ ticker.name }} - USD</dt>
+            <dd class="mt-1 text-3xl font-semibold text-gray-900">{{ ticker.price }}</dd>
           </div>
           <div class="w-full border-t border-gray-200"></div>
           <button
-            @click.stop="removeTrackedTicker(tTicker.name)"
+            @click.stop="removeTrackedTicker(ticker.name)"
             class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
           >
             <svg
@@ -120,6 +128,24 @@
       </dl>
       <div v-else class="text-center font-bold mt-5 text-xl">Нет отслеживаемых тикеров</div>
       <hr class="w-full border-t border-gray-600 my-4" />
+
+      <div>
+        <button
+          v-if="currentPage > 1 && totalPages > 1"
+          @click="decrementCurrentPage"
+          class="inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+        >
+          Предыдущая страница
+        </button>
+        <button
+          v-if="currentPage < totalPages"
+          @click="incrementCurrentPage"
+          class="inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+        >
+          Следующая страница
+        </button>
+      </div>
+
       <section v-if="selectedTicker" class="relative">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">{{ selectedTicker }} - USD</h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
@@ -161,19 +187,36 @@
 <script lang="ts">
 import axios from 'axios';
 import { defineComponent } from 'vue';
-import { API_KEY, INTERVAL_PRICE_UPDATE } from '@/config';
+import { API_KEY, INTERVAL_PRICE_UPDATE, LIMIT_TRACKED_TICKERS_ON_PAGE } from '@/config';
+
+interface TickerInfoFromAllTickers {
+  Id: number;
+  ImageUrl: string;
+  Symbol: string;
+  FullName: string;
+}
+
+interface TrackedTickerInfo {
+  name: string;
+  price: string;
+}
 
 export default defineComponent({
   data() {
     return {
       isAppLoading: true,
+      allTickers: [] as Array<TickerInfoFromAllTickers>,
+
       errorDoubleTicker: false,
       inputTicker: '',
+
       selectedTicker: '',
-      autocompleteTickers: [] as Array<string>,
-      allTickers: [] as Array<{ Id: number; ImageUrl: string; Symbol: string; FullName: string }>,
-      trackedTickers: [] as Array<{ name: string; price: string }>,
+      trackedTickers: [] as Array<TrackedTickerInfo>,
       pricesChart: [] as Array<number>,
+
+      searchQuery: '',
+      currentPage: 1,
+      totalPages: 1,
     };
   },
   mounted() {
@@ -199,7 +242,6 @@ export default defineComponent({
 
       const currentTicker = { name: this.inputTicker, price: '-' };
       this.trackedTickers.push(currentTicker);
-      localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
 
       this.inputTicker = '';
 
@@ -254,19 +296,47 @@ export default defineComponent({
         }
       }, INTERVAL_PRICE_UPDATE);
     },
+    incrementCurrentPage() {
+      this.currentPage += 1;
+    },
+    decrementCurrentPage() {
+      this.currentPage -= 1;
+    },
   },
   watch: {
-    inputTicker() {
-      if (this.allTickers.length && this.inputTicker) {
-        this.autocompleteTickers = this.allTickers
-          .filter(
-            (ticker) =>
-              ticker.Symbol.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase()) ||
-              ticker.FullName.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase())
-          )
-          .map((ticker) => ticker.Symbol)
-          .slice(0, 4);
-      }
+    searchQuery() {
+      this.currentPage = 1;
+    },
+    trackedTickers() {
+      localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
+    },
+    searchedTickers() {
+      this.totalPages = Math.ceil(this.searchedTickers.length / LIMIT_TRACKED_TICKERS_ON_PAGE);
+    },
+  },
+  computed: {
+    autocompleteTickers(): Array<string> {
+      if (!this.inputTicker) return [];
+      return this.allTickers
+        .filter(
+          (ticker) =>
+            ticker.Symbol.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase()) ||
+            ticker.FullName.toLocaleLowerCase().includes(this.inputTicker.toLocaleLowerCase())
+        )
+        .map((ticker) => ticker.Symbol)
+        .slice(0, 4);
+    },
+    searchedTickers(): Array<TrackedTickerInfo> {
+      return this.trackedTickers.filter((ticker) => ticker.name.includes(this.searchQuery));
+    },
+    paginatedTickers(): Array<TrackedTickerInfo> {
+      return this.searchedTickers.slice(this.startPaginatedIndex, this.endPaginatedIndex);
+    },
+    startPaginatedIndex(): number {
+      return (this.currentPage - 1) * LIMIT_TRACKED_TICKERS_ON_PAGE;
+    },
+    endPaginatedIndex(): number {
+      return this.currentPage * LIMIT_TRACKED_TICKERS_ON_PAGE;
     },
   },
 });
