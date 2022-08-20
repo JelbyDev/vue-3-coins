@@ -150,7 +150,7 @@
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">{{ selectedTicker }} - USD</h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
-            v-for="(price, index) in normalizePricesChart()"
+            v-for="(price, index) in normalizedPricesChart"
             :key="index"
             :style="{ height: `${price}%` }"
             class="bg-purple-800 border w-10 h-24"
@@ -223,6 +223,7 @@ export default defineComponent({
     const windowSearchParams = Object.fromEntries(
       new URL(window.location.href).searchParams.entries()
     );
+
     if (windowSearchParams.search) this.searchQuery = windowSearchParams.search;
     if (windowSearchParams.page) this.currentPage = +windowSearchParams.page;
 
@@ -248,14 +249,13 @@ export default defineComponent({
       }
 
       const currentTicker = { name: this.inputTicker, price: '-' };
-      this.trackedTickers.push(currentTicker);
-
+      this.trackedTickers = [...this.trackedTickers, currentTicker];
       this.inputTicker = '';
-
       this.subscribeToUpdatedTickerPrice(currentTicker.name);
     },
     removeTrackedTicker(tickerName: string): void {
       this.trackedTickers = this.trackedTickers.filter((ticker) => ticker.name != tickerName);
+      if (this.selectedTicker === tickerName) this.selectedTicker = '';
     },
     clickedOnAutocompleteTicker(tickerName: string): void {
       this.inputTicker = tickerName;
@@ -263,17 +263,8 @@ export default defineComponent({
     },
     changeSelectedTicker(tickerName: string): void {
       this.selectedTicker = tickerName;
-      this.pricesChart = [];
-    },
-    normalizePricesChart() {
-      const maxValue = Math.max(...this.pricesChart);
-      const minValue = Math.min(...this.pricesChart);
-      return this.pricesChart.map((price) => {
-        return 5 + ((price - minValue) * 95) / (maxValue - minValue);
-      });
     },
     async setAllTickers() {
-      this.isAppLoading = true;
       try {
         const response = await axios.get(
           'https://min-api.cryptocompare.com/data/all/coinlist?summary=true'
@@ -298,7 +289,7 @@ export default defineComponent({
           findTicker.price = normalizePrice;
 
           if (this.selectedTicker && this.selectedTicker === findTicker.name) {
-            this.pricesChart.push(+normalizePrice);
+            this.pricesChart = [...this.pricesChart, +normalizePrice];
           }
         }
       }, INTERVAL_PRICE_UPDATE);
@@ -309,31 +300,39 @@ export default defineComponent({
     decrementCurrentPage() {
       this.currentPage -= 1;
     },
-  },
-  watch: {
-    searchQuery() {
-      this.currentPage = 1;
-      window.history.pushState(
-        null,
-        document.title,
-        `${window.location.pathname}?search=${this.searchQuery}&page=${this.currentPage}`
-      );
-    },
-    currentPage() {
-      window.history.pushState(
-        null,
-        document.title,
-        `${window.location.pathname}?search=${this.searchQuery}&page=${this.currentPage}`
-      );
-    },
-    trackedTickers() {
-      window.localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
-    },
-    searchedTickers() {
+    changeTotalPages() {
       this.totalPages = Math.ceil(this.searchedTickers.length / LIMIT_TRACKED_TICKERS_ON_PAGE);
     },
   },
+  watch: {
+    selectedTicker() {
+      this.pricesChart = [];
+    },
+    urlQueryParams() {
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?search=${this.searchQuery}&page=${this.currentPage}`
+      );
+    },
+    searchQuery() {
+      this.currentPage = 1;
+    },
+    trackedTickers() {
+      this.changeTotalPages();
+      window.localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
+    },
+    searchedTickers() {
+      this.changeTotalPages();
+    },
+  },
   computed: {
+    urlQueryParams(): { search: string; page: number } {
+      return {
+        search: this.searchQuery,
+        page: this.currentPage,
+      };
+    },
     autocompletedTickers(): Array<string> {
       if (!this.inputTicker) return [];
       return this.allTickers
@@ -358,6 +357,14 @@ export default defineComponent({
     },
     endPaginatedIndex(): number {
       return this.currentPage * LIMIT_TRACKED_TICKERS_ON_PAGE;
+    },
+    normalizedPricesChart(): Array<number> {
+      const maxValue = Math.max(...this.pricesChart);
+      const minValue = Math.min(...this.pricesChart);
+
+      if (maxValue === minValue) return this.pricesChart.map(() => 50);
+
+      return this.pricesChart.map((price) => 5 + ((price - minValue) * 95) / (maxValue - minValue));
     },
   },
 });
