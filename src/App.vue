@@ -45,7 +45,7 @@
             </div>
             <div
               v-if="autocompletedTickers.length"
-              class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
+              class="flex bg-white shadow-md p-1 rounded-md flex-wrap"
             >
               <span
                 v-for="aTicker in autocompletedTickers"
@@ -66,7 +66,6 @@
           type="button"
           class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
         >
-          <!-- Heroicon name: solid/mail -->
           <svg
             class="-ml-0.5 mr-2 h-6 w-6"
             xmlns="http://www.w3.org/2000/svg"
@@ -102,7 +101,9 @@
         >
           <div class="px-4 py-5 sm:p-6 text-center">
             <dt class="text-sm font-medium text-gray-500 truncate">{{ ticker.name }} - USD</dt>
-            <dd class="mt-1 text-3xl font-semibold text-gray-900">{{ ticker.price }}</dd>
+            <dd class="mt-1 text-3xl font-semibold text-gray-900">
+              {{ formattedPrice(ticker.price) }}
+            </dd>
           </div>
           <div class="w-full border-t border-gray-200"></div>
           <button
@@ -152,7 +153,7 @@
           <div
             v-for="(price, index) in normalizedPricesChart"
             :key="index"
-            :style="{ height: `${price}%` }"
+            :style="{ height: `${formattedPrice(price)}%` }"
             class="bg-purple-800 border w-10 h-24"
           ></div>
         </div>
@@ -185,21 +186,11 @@
 </template>
 
 <script lang="ts">
-import axios from 'axios';
+import { getTickets } from '@/api/Tickers';
+import { subscribeToTicker, unsubscribeFromTicker } from '@/api/TickerSubscribe';
 import { defineComponent } from 'vue';
-import { API_KEY, INTERVAL_PRICE_UPDATE, LIMIT_TRACKED_TICKERS_ON_PAGE } from '@/config';
-
-interface TickerInfoFromAllTickers {
-  Id: number;
-  ImageUrl: string;
-  Symbol: string;
-  FullName: string;
-}
-
-interface TrackedTickerInfo {
-  name: string;
-  price: string;
-}
+import { LIMIT_TRACKED_TICKERS_ON_PAGE } from '@/config';
+import { TickerInfoFromAllTickers, TrackedTickerInfo } from '@/types';
 
 export default defineComponent({
   data() {
@@ -233,7 +224,9 @@ export default defineComponent({
     if (localTrackedTickers) {
       this.trackedTickers = JSON.parse(localTrackedTickers);
       this.trackedTickers.forEach((ticker) => {
-        this.subscribeToUpdatedTickerPrice(ticker.name);
+        subscribeToTicker(ticker.name, (newPrice: number) =>
+          this.updateTicker(ticker.name, newPrice)
+        );
       });
     }
   },
@@ -248,14 +241,25 @@ export default defineComponent({
         return false;
       }
 
-      const currentTicker = { name: this.inputTicker, price: '-' };
+      const currentTicker = { name: this.inputTicker, price: 0 };
       this.trackedTickers = [...this.trackedTickers, currentTicker];
       this.inputTicker = '';
-      this.subscribeToUpdatedTickerPrice(currentTicker.name);
+      subscribeToTicker(currentTicker.name, (newPrice: number) =>
+        this.updateTicker(currentTicker.name, newPrice)
+      );
+    },
+    updateTicker(tickerName: string, price: number) {
+      const findTicker = this.trackedTickers.find((ticker) => tickerName === ticker.name);
+      if (findTicker) {
+        findTicker.price = price;
+        if (this.selectedTicker && this.selectedTicker === findTicker.name)
+          this.pricesChart = [...this.pricesChart, price];
+      }
     },
     removeTrackedTicker(tickerName: string): void {
       this.trackedTickers = this.trackedTickers.filter((ticker) => ticker.name != tickerName);
       if (this.selectedTicker === tickerName) this.selectedTicker = '';
+      unsubscribeFromTicker(tickerName);
     },
     clickedOnAutocompleteTicker(tickerName: string): void {
       this.inputTicker = tickerName;
@@ -266,33 +270,12 @@ export default defineComponent({
     },
     async setAllTickers() {
       try {
-        const response = await axios.get(
-          'https://min-api.cryptocompare.com/data/all/coinlist?summary=true'
-        );
-        this.allTickers = Object.values(response.data.Data);
+        await getTickets().then((resolve) => (this.allTickers = resolve));
       } catch (error) {
         console.log(error);
       } finally {
         this.isAppLoading = false;
       }
-    },
-    subscribeToUpdatedTickerPrice(tickerName: string): void {
-      setInterval(async () => {
-        const response = await axios.get(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=${API_KEY}`
-        );
-        const findTicker = this.trackedTickers.find((ticker) => tickerName === ticker.name);
-        if (findTicker) {
-          const responsePrice = response.data.USD;
-          const normalizePrice =
-            responsePrice > 1 ? responsePrice.toFixed(2) : responsePrice.toPrecision(2);
-          findTicker.price = normalizePrice;
-
-          if (this.selectedTicker && this.selectedTicker === findTicker.name) {
-            this.pricesChart = [...this.pricesChart, +normalizePrice];
-          }
-        }
-      }, INTERVAL_PRICE_UPDATE);
     },
     incrementCurrentPage() {
       this.currentPage += 1;
@@ -302,6 +285,10 @@ export default defineComponent({
     },
     changeTotalPages() {
       this.totalPages = Math.ceil(this.searchedTickers.length / LIMIT_TRACKED_TICKERS_ON_PAGE);
+    },
+    formattedPrice(price: number) {
+      if (price === 0) return price;
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2);
     },
   },
   watch: {
