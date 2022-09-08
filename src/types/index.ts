@@ -8,4 +8,5 @@ export interface TickerInfoFromAllTickers {
 export interface TrackedTickerInfo {
   name: string;
   price: number;
+  invalid: boolean;
 }

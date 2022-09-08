@@ -96,10 +96,17 @@
           v-for="ticker in paginatedTickers"
           :key="ticker.name"
           @click="changeSelectedTicker(ticker.name)"
-          :class="{ 'border-purple-800': ticker.name === selectedTicker }"
+          :class="{
+            'border-purple-800': ticker.name === selectedTicker,
+          }"
           class="bg-white overflow-hidden shadow rounded-lg border-4 border-transparent border-solid cursor-pointer"
         >
-          <div class="px-4 py-5 sm:p-6 text-center">
+          <div
+            class="px-4 py-5 sm:p-6 text-center"
+            :class="{
+              'bg-red-100': ticker.invalid,
+            }"
+          >
             <dt class="text-sm font-medium text-gray-500 truncate">{{ ticker.name }} - USD</dt>
             <dd class="mt-1 text-3xl font-semibold text-gray-900">
               {{ formattedPrice(ticker.price) }}
@@ -189,7 +196,7 @@
 import { getTickets } from '@/api/Tickers';
 import { subscribeToTicker, unsubscribeFromTicker } from '@/api/TickerSubscribe';
 import { defineComponent } from 'vue';
-import { LIMIT_TRACKED_TICKERS_ON_PAGE } from '@/config';
+import { LIMIT_TRACKED_TICKERS_ON_PAGE } from '@/config/constants';
 import { TickerInfoFromAllTickers, TrackedTickerInfo } from '@/types';
 
 export default defineComponent({
@@ -224,9 +231,9 @@ export default defineComponent({
     if (localTrackedTickers) {
       this.trackedTickers = JSON.parse(localTrackedTickers);
       this.trackedTickers.forEach((ticker) => {
-        subscribeToTicker(ticker.name, (newPrice: number) =>
-          this.updateTicker(ticker.name, newPrice)
-        );
+        subscribeToTicker(ticker.name, (newPrice: number) => {
+          this.updateTicker(ticker.name, newPrice);
+        });
       });
     }
   },
@@ -241,7 +248,7 @@ export default defineComponent({
         return false;
       }
 
-      const currentTicker = { name: this.inputTicker, price: 0 };
+      const currentTicker = { name: this.inputTicker, price: 0, invalid: false };
       this.trackedTickers = [...this.trackedTickers, currentTicker];
       this.inputTicker = '';
       subscribeToTicker(currentTicker.name, (newPrice: number) =>
@@ -252,6 +259,7 @@ export default defineComponent({
       const findTicker = this.trackedTickers.find((ticker) => tickerName === ticker.name);
       if (findTicker) {
         findTicker.price = price;
+        if (!price) findTicker.invalid = true;
         if (this.selectedTicker && this.selectedTicker === findTicker.name)
           this.pricesChart = [...this.pricesChart, price];
       }
