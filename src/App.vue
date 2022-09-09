@@ -215,6 +215,8 @@ export default defineComponent({
       searchQuery: '',
       currentPage: 1,
       totalPages: 1,
+
+      broadcastChannel: new BroadcastChannel('socket-channel'),
     };
   },
   mounted() {
@@ -236,6 +238,14 @@ export default defineComponent({
         });
       });
     }
+
+    //this.broadcastChannel.addEventListener('message', (event) => {
+    //  const trackedTickers = JSON.parse(event.data);
+    //  this.trackedTickers = [...trackedTickers];
+    //});
+    //window.addEventListener('storage', (event) => {
+    //  console.log(window.localStorage.getItem('trackedTickers'));
+    //});
   },
   methods: {
     addTrackedTicker(): void | boolean {
@@ -316,6 +326,7 @@ export default defineComponent({
     trackedTickers() {
       this.changeTotalPages();
       window.localStorage.setItem('trackedTickers', JSON.stringify(this.trackedTickers));
+      //this.broadcastChannel.postMessage(JSON.stringify(this.trackedTickers));
     },
     searchedTickers() {
       this.changeTotalPages();
