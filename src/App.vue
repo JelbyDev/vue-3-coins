@@ -156,12 +156,13 @@
 
       <section v-if="selectedTicker" class="relative">
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">{{ selectedTicker }} - USD</h3>
-        <div class="flex items-end border-gray-600 border-b border-l h-64">
+        <div class="flex items-end border-gray-600 border-b border-l h-64" ref="chartPricesNode">
           <div
-            v-for="(price, index) in normalizedPricesChart"
+            v-for="(price, index) in normalizedChartPrices"
             :key="index"
             :style="{ height: `${formattedPrice(price)}%` }"
             class="bg-purple-800 border w-10 h-24"
+            ref="chartPricesElementNode"
           ></div>
         </div>
         <button @click="changeSelectedTicker('')" type="button" class="absolute top-0 right-0">
@@ -199,6 +200,8 @@ import { defineComponent } from 'vue';
 import { LIMIT_TRACKED_TICKERS_ON_PAGE } from '@/config/constants';
 import { TickerInfoFromAllTickers, TrackedTickerInfo } from '@/types';
 
+const WIDTH_CHART_PRICES_ELEMENT = 37;
+
 export default defineComponent({
   data() {
     return {
@@ -210,34 +213,36 @@ export default defineComponent({
 
       selectedTicker: '',
       trackedTickers: [] as Array<TrackedTickerInfo>,
-      pricesChart: [] as Array<number>,
+      chartPrices: [] as Array<number>,
+      maxChartPricesElements: 1,
 
       searchQuery: '',
       currentPage: 1,
       totalPages: 1,
 
-      broadcastChannel: new BroadcastChannel('socket-channel'),
+      //broadcastChannel: new BroadcastChannel('socket-channel'),
     };
   },
   mounted() {
     const windowSearchParams = Object.fromEntries(
       new URL(window.location.href).searchParams.entries()
     );
-
     if (windowSearchParams.search) this.searchQuery = windowSearchParams.search;
     if (windowSearchParams.page) this.currentPage = +windowSearchParams.page;
-
-    this.setAllTickers();
 
     const localTrackedTickers = window.localStorage.getItem('trackedTickers');
     if (localTrackedTickers) {
       this.trackedTickers = JSON.parse(localTrackedTickers);
       this.trackedTickers.forEach((ticker) => {
         subscribeToTicker(ticker.name, (newPrice: number) => {
-          this.updateTicker(ticker.name, newPrice);
+          this.updateTrackedTicker(ticker.name, newPrice);
         });
       });
     }
+
+    window.addEventListener('resize', this.calculateMaxChartPricesElements);
+
+    this.setAllTickers();
 
     //this.broadcastChannel.addEventListener('message', (event) => {
     //  const trackedTickers = JSON.parse(event.data);
@@ -246,6 +251,9 @@ export default defineComponent({
     //window.addEventListener('storage', (event) => {
     //  console.log(window.localStorage.getItem('trackedTickers'));
     //});
+  },
+  beforeUnmount() {
+    window.removeEventListener('resize', this.calculateMaxChartPricesElements);
   },
   methods: {
     addTrackedTicker(): void | boolean {
@@ -262,16 +270,17 @@ export default defineComponent({
       this.trackedTickers = [...this.trackedTickers, currentTicker];
       this.inputTicker = '';
       subscribeToTicker(currentTicker.name, (newPrice: number) =>
-        this.updateTicker(currentTicker.name, newPrice)
+        this.updateTrackedTicker(currentTicker.name, newPrice)
       );
     },
-    updateTicker(tickerName: string, price: number) {
-      const findTicker = this.trackedTickers.find((ticker) => tickerName === ticker.name);
-      if (findTicker) {
-        findTicker.price = price;
-        if (!price) findTicker.invalid = true;
-        if (this.selectedTicker && this.selectedTicker === findTicker.name)
-          this.pricesChart = [...this.pricesChart, price];
+    updateTrackedTicker(tickerName: string, price: number) {
+      const foundTicker = this.trackedTickers.find((ticker) => tickerName === ticker.name);
+      if (foundTicker) {
+        foundTicker.price = price;
+        if (!price) foundTicker.invalid = true;
+        if (this.selectedTicker && this.selectedTicker === foundTicker.name) {
+          this.updateChartPrices(price);
+        }
       }
     },
     removeTrackedTicker(tickerName: string): void {
@@ -295,6 +304,22 @@ export default defineComponent({
         this.isAppLoading = false;
       }
     },
+    updateChartPrices(price?: number) {
+      if (price) this.chartPrices = [...this.chartPrices, price];
+
+      if (this.chartPrices.length >= this.maxChartPricesElements) {
+        const startChartPricesIndex = this.chartPrices.length - this.maxChartPricesElements;
+        this.chartPrices = [
+          ...this.chartPrices.slice(startChartPricesIndex, this.chartPrices.length),
+        ];
+      }
+    },
+    calculateMaxChartPricesElements(): void {
+      if (!this.$refs.chartPricesNode) return;
+      this.maxChartPricesElements = Math.floor(
+        (this.$refs.chartPricesNode as HTMLElement).clientWidth / WIDTH_CHART_PRICES_ELEMENT
+      );
+    },
     incrementCurrentPage() {
       this.currentPage += 1;
     },
@@ -310,8 +335,14 @@ export default defineComponent({
     },
   },
   watch: {
+    chartPrices(newValue) {
+      if (newValue.length === 1) this.calculateMaxChartPricesElements();
+    },
+    maxChartPricesElements() {
+      this.updateChartPrices();
+    },
     selectedTicker() {
-      this.pricesChart = [];
+      this.chartPrices = [];
     },
     urlQueryParams() {
       window.history.pushState(
@@ -364,13 +395,13 @@ export default defineComponent({
     endPaginatedIndex(): number {
       return this.currentPage * LIMIT_TRACKED_TICKERS_ON_PAGE;
     },
-    normalizedPricesChart(): Array<number> {
-      const maxValue = Math.max(...this.pricesChart);
-      const minValue = Math.min(...this.pricesChart);
+    normalizedChartPrices(): Array<number> {
+      const maxValue = Math.max(...this.chartPrices);
+      const minValue = Math.min(...this.chartPrices);
 
-      if (maxValue === minValue) return this.pricesChart.map(() => 50);
+      if (maxValue === minValue) return this.chartPrices.map(() => 50);
 
-      return this.pricesChart.map((price) => 5 + ((price - minValue) * 95) / (maxValue - minValue));
+      return this.chartPrices.map((price) => 5 + ((price - minValue) * 95) / (maxValue - minValue));
     },
   },
 });
