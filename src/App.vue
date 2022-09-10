@@ -160,7 +160,10 @@
           <div
             v-for="(price, index) in normalizedChartPrices"
             :key="index"
-            :style="{ height: `${formattedPrice(price)}%` }"
+            :style="{
+              height: `${formattedPrice(price)}%`,
+              width: `${widthChartPricesElement}px`,
+            }"
             class="bg-purple-800 border w-10 h-24"
             ref="chartPricesElementNode"
           ></div>
@@ -215,6 +218,7 @@ export default defineComponent({
       trackedTickers: [] as Array<TrackedTickerInfo>,
       chartPrices: [] as Array<number>,
       maxChartPricesElements: 1,
+      widthChartPricesElement: WIDTH_CHART_PRICES_ELEMENT,
 
       searchQuery: '',
       currentPage: 1,
@@ -335,14 +339,12 @@ export default defineComponent({
     },
   },
   watch: {
-    chartPrices(newValue) {
-      if (newValue.length === 1) this.calculateMaxChartPricesElements();
-    },
     maxChartPricesElements() {
       this.updateChartPrices();
     },
     selectedTicker() {
       this.chartPrices = [];
+      this.$nextTick().then(() => this.calculateMaxChartPricesElements());
     },
     urlQueryParams() {
       window.history.pushState(
